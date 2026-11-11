@@ -1,0 +1,49 @@
+{
+  "summary": "Live mobile Expo preview loaded, role access and citizen SOS flow were exercised. SOS persisted and rendered ACTIVE EMERGENCY after server response; health/readiness and full API workflow were previously verified in the supplied context. Mobile SOS composer has a blocking viewport issue.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "SosComposer",
+        "issue": "Modal content is not wrapped in a scrollable container. At 390x844, the Medical/type controls and CONFIRM SOS are outside the viewport and Playwright cannot tap them normally; the flow only completes with forced clicks.",
+        "testID": "send-sos",
+        "priority": "HIGH"
+      },
+      {
+        "component": "StatusCard",
+        "issue": "On a 390px viewport, the ACKNOWLEDGED badge visibly extends/clips beyond the right edge of the status card.",
+        "testID": "",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Frontend backend URL configuration",
+        "issue": "The implementation reads EXPO_PUBLIC_BACKEND_URL, while the workspace contract specifies EXPO_BACKEND_URL. The current .env happens to define the public variant, but deployments providing only the required key will produce an empty API base URL.",
+        "affected_testIDs": ["send-sos"]
+      }
+    ],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_1.json", "/app/frontend/app/index.tsx", "/app/frontend/src/crisis-api.ts"],
+  "action_items": [
+    "Wrap SOS composer body in a ScrollView (or otherwise fit controls) while retaining keyboard-safe behavior.",
+    "Constrain or reposition StatusCard header/badge so it cannot overflow at 390px width.",
+    "Support the mandated EXPO_BACKEND_URL key in crisis-api.ts and preserve the current configured key only as compatibility fallback."
+  ],
+  "critical_code_review_comments": [
+    "Interactive role buttons and logout icon lack testID attributes, reducing reliable automated coverage.",
+    "Responder location watcher is hardcoded to responder-alpha rather than the logged-in session user_id; this can update the wrong responder for other responder sessions."
+  ],
+  "updated_files": ["/app/test_reports/iteration_1.json"],
+  "success_rate": {"backend": "100% for supplied/observed core workflow; health/readiness returned successfully in prior verification", "frontend": "80%"},
+  "seed_data_creation": "Created one test SOS through the live citizen UI; demo data was reset before the clean run.",
+  "retest_needed": true,
+  "should_call_test_agent_after_fix": true,
+  "context_for_next_testing_agent": "Use 390x844. Reset via POST /api/demo/reset before citizen UI testing. The SOS modal requires forced clicks because controls are below the viewport; verify normal taps after ScrollView fix.",
+  "rca_of_issue": "SosComposer renders a tall View directly inside KeyboardAvoidingView with modalCard maxHeight 90%, but no ScrollView. On mobile the lower controls are clipped/non-tappable. StatusCard uses a horizontal statusTop row without sufficient shrink/wrapping for its title and badge."
+}

@@ -1,0 +1,39 @@
+{
+  "summary": "Iteration 3 PASSED. Backend: 29/29 pytest (23 regression + 6 new realtime/AI tests). New tests verify: WS /api/ws accepts connections and broadcasts incident.created / assignment.updated / responder.location / responder.status with correct payloads; POST /api/sos triaged by openai/gpt-5.6-terra (structured severity/capabilities/summary/risks/confidence, human_approval_required=true, ~1.6s, well under 25s budget); deterministic-safety-provider fallback intact (unit-level). Frontend (390x844): Command Center LIVE pill, Leaflet map with Esri World_Dark_Gray tiles (8/8 loaded, NO 'API KEY REQUIRED' watermark), realtime incident push appeared in 0.8s WITHOUT refresh with red marker on map. Offline SOS queue verified with set_offline(true): payload queued locally, sos-outbox-banner shown, nothing leaked to server; on reconnect auto-flushed in 1.8s, incident created server-side via LLM triage, banner cleared, UI updated. Full E2E regression intact: Operator APPROVE DISPATCH -> Responder ACCEPTED->EN_ROUTE (responder-map rendered with tiles + 2 markers incl. self position) -> ON_SCENE -> COMPLETED -> RESOLVED via API. ONE minor issue: connection pill does not detect silent network drops (no WS heartbeat; navigator.onLine not observed) — stayed LIVE for 20s+ of emulated offline; RECONNECTING only appears when the socket actually closes.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/ws", "issue": "No heartbeat/ping-pong from server or client; silently dead sockets are never detected, so clients can show stale LIVE state (observed 20s+ during emulated offline). 30s fallback poll keeps data fresh, but the connection indicator lies.", "priority": "MINOR"}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "connection-pill LIVE/RECONNECTING", "issue": "Pill stays LIVE during silent network drop because subscribeEvents only flips state on socket onclose; no heartbeat timeout and no window 'offline' event listener. Real connection resets DO flip to RECONNECTING correctly.", "affected_testIDs": ["connection-pill"]}
+    ],
+    "design_issues": [
+      {"screen": "Citizen SOS composer", "issues": ["At 390x844 with description filled, confirm-sos-button renders below the fold inside the modal; user must scroll the modal (KeyboardAwareScrollView scroll works; Playwright auto-scroll into the RN-web inner container failed, needed JS scrollIntoView — manual user scroll unaffected). Consider reducing vertical spacing so confirm is visible without scroll."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_3.json", "/app/backend/tests/test_crisisos_workflow.py", "/app/backend/tests/test_realtime_ai.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "MINOR: add WS heartbeat (client ping every ~15s or server ping) and/or listen to window 'offline'/'online' in subscribeEvents so connection-pill reflects silent drops; flip to RECONNECTING immediately on 'offline'.",
+    "OPTIONAL UX: tighten SOS composer vertical spacing at small viewport heights so confirm-sos-button is visible without scrolling."
+  ],
+  "critical_code_review_comments": [
+    "Regression test fix (test-only): severity assertion relaxed to allowed set {LOW,MODERATE,HIGH,CRITICAL} because severity is now LLM-derived (non-deterministic) since iteration 3 — the previous '== CRITICAL' assertion was the root cause of all 10 initial failures (cascade of class-attribute state). App behavior is correct.",
+    "Shared preview backend caveat: other live clients (open tabs with the 15s outbox flush) can create SOS concurrently; realtime test asserts our incident_id appears among broadcast events rather than strict equality.",
+    "pytest.ini addopts pins '-n 2 --dist loadscope'; per its own comment, serial runs must use '-n 0' (used here). 29/29 pass sequentially.",
+    "No deprecated Expo packages (no expo-av / expo-barcode-scanner / expo-background-fetch). expo-location ~57.0.20, react-native-maps 1.27.2, leaflet 1.9.4, react-native-keyboard-controller 1.21.9 — all current.",
+    "Responder location watcher correctly uses assignment.responder_id (index.tsx:169); human-approval invariant holds (approve-dispatch is operator-initiated, ai_analysis.human_approval_required always true on both LLM and deterministic paths); MongoDB _id excluded in all responses.",
+    "Provider label 'ANALYSIS: OPENAI/GPT-5.6-TERRA' rendered in Command Center review panel as designed."
+  ],
+  "updated_files": ["/app/backend/tests/test_crisisos_workflow.py", "/app/backend/tests/test_realtime_ai.py", "/app/test_reports/pytest/pytest_results.xml", "/app/test_reports/iteration_3.json"],
+  "success_rate": {"backend": "100% (29/29)", "frontend": "100% (all flows pass; 1 minor realtime-indicator gap)"},
+  "seed_data_creation": "Created TEST incidents via UI/API (FIRE realtime push, offline-queue BUILDING_COLLAPSE) and completed full dispatch workflow; demo data reset via POST /api/demo/reset after testing.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All 4 new features (WS realtime, Leaflet/Esri live map, offline SOS outbox, OpenAI gpt-5.6-terra triage) verified working. Run pytest with -n 0 (serial) per pytest.ini comment. New suite: /app/backend/tests/test_realtime_ai.py (websockets lib used for WS assertions). Known minor: connection-pill doesn't detect silent socket drops (no heartbeat) — if main agent adds ping/pong, retest by context.set_offline(true) and expecting RECONNECTING within ~15-20s. In Playwright, clicking confirm-sos-button at 390x844 requires JS scrollIntoView first (modal inner scroll container defeats Playwright auto-scroll; not a user-facing bug). Grant geolocation permission + set_geolocation for map/self-marker tests. Reset via POST /api/demo/reset before UI runs.",
+  "rca_of_issue": "Initial regression run: 10 failed. RCA: root failure was test_create_sos asserting severity=='CRITICAL' — with LLM triage the model returned 'HIGH' for the same payload (non-deterministic by design); the single assert failure cascaded into 9 AttributeError failures (class-level shared state never set). Fix: relax test to allowed severity set; rerun 23/23 pass. Connection-pill gap RCA: subscribeEvents (crisis-api.ts:44-72) only updates state on socket.onclose; Chromium offline emulation (and real silent drops like NAT timeout) leaves the TCP socket half-open, no close event fires, and there is no heartbeat timeout or navigator.onLine/offline handling — so the UI cannot distinguish a dead-but-open socket. Mitigation implemented elsewhere: 30s fallback poll still refreshes data."
+}

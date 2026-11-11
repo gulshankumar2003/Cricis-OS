@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration 4 PASSED. Backend: 69/69 pytest (updated pre-auth suites to JWT + 2 new suites: test_auth.py, test_media_alerts.py). Verified: signup (201 CITIZEN, 409 dup, 422 short password), login per role + 401 wrong password, /auth/me, 401 on all protected routes without token, citizen 403 guards (approve-dispatch/alerts/analytics/audit/responders/assignments), citizen incident scoping (reported_by filter + 403 on foreign incident), upload (image-only 400, 8MB 413, 401 unauth), /api/files via ?token= AND Authorization header (401 without, 404 unknown), SOS media_paths ownership filtering (foreign media dropped), alerts publish/list/deactivate + validation, extended analytics fields, WS ping/pong heartbeat + alert.published broadcast, LLM triage openai/gpt-5.6-terra <26s. Frontend (390x844): auth screen with 4 autofill chips, wrong-password inline error, session persists across reload, citizen SOS with gallery photo (file chooser -> upload -> preview -> remove -> re-attach -> confirm -> StatusCard + media-thumb served via ?token= 200), citizen UI hides operator controls, operator Command Center (analytics-panel with all extended stats + bars, Leaflet/Esri map 8 tiles + incident marker, media thumb + provider label in review panel, alert composer publishes, APPROVE DISPATCH), responder full lifecycle ACCEPTED->EN_ROUTE->ON_SCENE->COMPLETED with responder-map (2 markers), alerts-strip realtime push WITHOUT refresh verified on responder (WS), offline outbox (queued banner -> auto-flush on reconnect -> StatusCard), connection-pill flips to RECONNECTING in 1s on offline (iter-3 gap FIXED), tampered-token -> 401 -> auto-logout to auth screen, signup/logout/admin flows. ONE bug found AND FIXED: 422 validation errors rendered as '[object Object]' in UI (crisis-api.ts request() assumed detail is string; FastAPI returns array for 422) - now surfaces 'String should have at least 12 characters'.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/ws", "issue": "WebSocket endpoint is unauthenticated (accepts any connection and broadcasts all incident/alert events to anonymous listeners). Acceptable for demo, but incident.created payloads leak incident IDs to unauthenticated WS clients while the REST API requires JWT.", "priority": "MINOR"},
+      {"endpoint": "/api/demo/reset", "issue": "Public unauthenticated full-data wipe (gated only by CRISISOS_DEMO_MODE=true). Fine for demo, but must be disabled in any shared/production deployment.", "priority": "MINOR"}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "crisis-api.ts request() error mapping", "issue": "FIXED BY TESTER: FastAPI 422 detail is an array, so Error(body.detail) rendered '[object Object]' to users (confirmed on signup short-password). Now maps array detail to joined 'msg' strings; verified 'String should have at least 12 characters' renders. Reference: /app/frontend/src/crisis-api.ts:87-99", "testID": "auth-submit-button", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Citizen SOS composer (390x844)", "issues": ["Confirm button renders below the fold inside the modal when description is filled (carried over from iter 3; modal scrolls fine for users, Playwright needs JS scrollIntoView). Optional: tighten vertical spacing."]},
+      {"screen": "Header / connection-pill", "issues": ["Pill briefly shows RECONNECTING for ~1-2s right after login while the WS handshake completes, then settles to LIVE. Cosmetic; consider an intermediate CONNECTING state."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_4.json", "/app/backend/tests/conftest.py", "/app/backend/tests/test_auth.py", "/app/backend/tests/test_media_alerts.py", "/app/backend/tests/test_crisisos_workflow.py", "/app/backend/tests/test_realtime_ai.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "DONE (tester): 422 error-to-string mapping in crisis-api.ts; main agent should sanity-review the change (src/crisis-api.ts request()).",
+    "OPTIONAL: tighten SOS composer vertical spacing at small viewport heights so confirm-sos-button is visible without scrolling.",
+    "OPTIONAL: consider authenticating /api/ws (ticket/token query param) before any production use; keep /api/demo/reset demo-gated.",
+    "NO ACTION: no deprecated Expo packages found (no expo-av/barcode-scanner/background-fetch/speech); expo 57.0.25, expo-image-picker ~57.0.20, react-native-maps 1.27.2 all current."
+  ],
+  "critical_code_review_comments": [
+    "Auth invariant solid: bcrypt via passlib, JWT re-reads user per request (role changes/disabled users take effect immediately), disabled users rejected, signup always CITIZEN, media attach filtered by owner_id server-side (foreign media silently dropped - verified), /api/files accepts ?token= for web <img> plus Authorization header.",
+    "Human-approval invariant holds: approve-dispatch is OPERATOR/ADMIN-only (403 for citizen verified), ai_analysis.human_approval_required=true on both LLM and deterministic paths.",
+    "WS heartbeat now present both sides: server answers 'ping' with pong frame (server.py:329-330); client sends ping every 15s, closes on 5s pong timeout, plus window offline/online listeners (crisis-api.ts:114-164) - iter-3 silent-drop gap verified FIXED (pill flips in 1s).",
+    "Minor: FastAPI @app.on_event startup/shutdown deprecated (use lifespan handlers) - cosmetic deprecation warnings only.",
+    "Test-infra RCA (iteration 4, all test-side): (1) signup email assertion - server correctly lowercases email; (2) upload 422 in tests - requests session default 'Content-Type: application/json' suppressed multipart boundary; fixed via per-request Content-Type=None; (3) analytics active_incidents==0 assertion invalid under shared suite state (test_auth leaves an unresolved SOS). App behavior correct in all three.",
+    "False-positive guard: Playwright 'text=ACTIVE EMERGENCY' also matches citizen empty-state 'No active emergency history.' - always pair text selectors with testIDs. One earlier script run mistook the empty state for a StatusCard after its confirm click was correctly ignored while photo upload was in-flight (disabled Pressable working as designed)."
+  ],
+  "updated_files": ["/app/backend/tests/conftest.py", "/app/backend/tests/test_auth.py", "/app/backend/tests/test_media_alerts.py", "/app/backend/tests/test_crisisos_workflow.py", "/app/backend/tests/test_realtime_ai.py", "/app/frontend/src/crisis-api.ts", "/app/test_reports/pytest/pytest_results.xml", "/app/test_reports/iteration_4.json"],
+  "success_rate": {"backend": "100% (69/69)", "frontend": "100% (all flows pass after tester fix of 422 error mapping)"},
+  "seed_data_creation": "TEST signup users persist in db.users (TEST-signup-*, TEST-scope-*, TEST-ui-*@crisisos.app, all CITIZEN) - harmless; demo/reset does not remove users. All TEST incidents/alerts wiped via final POST /api/demo/reset; 2 active test alerts deactivated before reset.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All 4 iter-4 features (JWT auth, photo evidence, alerts, analytics) + full regression verified. Run pytest with -o addopts='' (serial) from /app/backend - conftest.py provides api_client/tokens/auth fixtures; BASE_URL auto-reads frontend/.env. For Playwright: (1) in-modal clicks need JS scrollIntoView+click (RN-web inner scroll defeats auto-scroll); (2) wait for 'Uploading photo' text to disappear before confirm-sos-button (disabled while uploading - by design); (3) never use bare text=ACTIVE EMERGENCY (matches 'No active emergency history.' empty state); (4) each browser_automation call is a FRESH profile - session persistence only testable via reload within one script; (5) gallery picker works via page.expect_file_chooser. Shared preview backend: other clients may call demo/reset concurrently - assert membership, not exclusivity.",
+  "rca_of_issue": "BUG (fixed): 422 errors showed '[object Object]'. Repro: signup with password 'short' -> server 422 -> UI renders '[object Object]'. RCA: crisis-api.ts request() did 'new Error(body.detail ?? ...)' but FastAPI returns detail as an ARRAY of {loc,msg,type} for Pydantic 422s; Array->Error.message stringifies to '[object Object]'. Fix: map array details to joined msg strings ('String should have at least 12 characters'). Verified post-fix. NO other app bugs found this iteration."
+}

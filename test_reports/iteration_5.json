@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 5 security remediation VERIFIED. Backend: 89/89 pytest pass (serial, -o addopts=''), including 20 new test_security.py tests. SEC-001: old hard-coded passwords (Citizen!2026/Responder!2026/Operator!2026/Admin!2026) all rejected 401; new env-sourced passwords work for all 4 roles; auth screen has zero autofill chips/passwords in DOM, and grep of the served 8.3MB JS bundle found 0 credential strings. SEC-002: demo/reset 401 unauth, 403 citizen/responder/operator, 200 admin (data-verified wipe). SEC-003: anonymous + bad-token WS refused (handshake rejected), authenticated ping/pong ok, citizen socket receives incident.created but NOT responder.location (operator receives both). SEC-004: raw ?token=JWT on /api/files now 401; /api/media/sign returns 10-min HMAC URL that fetches 200 with NO auth header; tampered + expired signatures 401; citizen signing foreign media 403, unknown path 404, unauth sign 401; Authorization-header path still 200. Rate limit: 10 failed logins per unique email all 401, 11th 429. Frontend regression (390x844) with NEW creds typed manually: citizen login -> SOS w/ gallery photo -> LLM triage (openai/gpt-5.6-terra, ~2s) -> StatusCard + media-thumb loaded via signed URL (mt/exp params, no token=) -> pill LIVE; operator Command Center (analytics panel + KPIs, Leaflet 8 tiles, incident card, media thumb + provider label in review panel, APPROVE DISPATCH ok, alert published); responder full lifecycle ACCEPTED->EN_ROUTE->ON_SCENE->COMPLETED + alerts-strip realtime receipt + media thumb; citizen then saw RESOLVED incident, alert strip, old-password inline 401 error, offline outbox (pill RECONNECTING in ~1s, '1 SOS is queued offline' banner, auto-flush ~2s after reconnect, pill back to LIVE).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Citizen SOS composer (390x844)", "issues": ["In-modal buttons (sos-people-increase, confirm-sos-button) render below the fold; modal scrolls fine for real users but Playwright needs JS scrollIntoView. Carried over from iter 3/4 — optional spacing tightening only."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_5.json", "/app/backend/tests/conftest.py", "/app/backend/tests/test_security.py", "/app/backend/tests/test_auth.py", "/app/backend/tests/test_media_alerts.py", "/app/backend/tests/test_crisisos_workflow.py", "/app/backend/tests/test_realtime_ai.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "NONE blocking. Security fixes all independently confirmed.",
+    "OPTIONAL: pytest class-scoped fixture in test_security.py (media_path) emits PytestRemovedIn10Warning — works today; convert to @classmethod if pytest 10 upgrade is planned.",
+    "OPTIONAL: FastAPI @app.on_event startup/shutdown deprecated (lifespan handlers) — cosmetic warnings only, carried over from iter 4.",
+    "NOTE (by design, not a bug): WS JWT travels in ?token= query param because browser/RN WebSocket clients cannot set headers — it appears in browser console network errors; SEC-004 scope (raw JWT in FILE urls) is fully closed. If desired later, move WS auth to a short-lived one-time ticket."
+  ],
+  "critical_code_review_comments": [
+    "SEC-001: seed_users() reads DEMO_<ROLE>_PASSWORD from env and rotates hashes on every startup; nothing credential-like in frontend source (grep clean) or served bundle (8.3MB grep clean); auth-screen.tsx only references memory/test_credentials.md docs.",
+    "SEC-002: demo/reset now Depends(require_roles('ADMIN')) + DEMO_MODE gate; verified 401/403x3/200 + actual wipe.",
+    "SEC-003: WS token verified pre-accept (jwt.decode + user re-read, disabled rejected), ConnectionManager tracks role per socket, PRIVILEGED_EVENTS={'responder.location'} skipped for CITIZEN sockets — verified live with dual citizen+operator sockets.",
+    "SEC-004: get_file branches on mt/exp (HMAC-SHA256 over path:exp, 40-char truncated, hmac.compare_digest, expiry checked) else Bearer; media/sign re-uses assert_media_access (owner OR media on own incident for citizens) — full matrix verified.",
+    "Rate limiter: in-memory sliding window, 10/300s keyed by email only on login+signup, checked BEFORE credential verification (fail-closed, also throttles user enumeration). 11th attempt 429 verified. Note: in-memory means multi-worker deployments would bypass — fine for single-process preview.",
+    "CORS allow_credentials=False with allow_origins=['*'] confirmed at server.py:906."
+  ],
+  "updated_files": ["/app/backend/tests/conftest.py", "/app/backend/tests/test_security.py", "/app/backend/tests/test_realtime_ai.py", "/app/backend/tests/test_media_alerts.py", "/app/test_reports/pytest/pytest_results.xml", "/app/test_reports/iteration_5.json"],
+  "success_rate": {"backend": "100% (89/89)", "frontend": "100% (all E2E flows pass)"},
+  "seed_data_creation": "TEST signup users persist in db.users (TEST-signup-*, TEST-scope-* from prior iters — harmless CITIZENs). All TEST incidents/alerts wiped via final admin POST /api/demo/reset; test alert deactivated before reset. Rate-limit test used unique nonexistent email (TEST-ratelimit-*) so no real account was locked out.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All 4 audit findings + rate limiting verified fixed; full E2E regression green with new creds. Test infra: conftest.py now uses Cs!* passwords from memory/test_credentials.md, admin_token fixture for demo/reset, ws_url(token) helper for WS tests; test_security.py must run LAST alphabetically (admin reset wipes data, rate-limit test burns attempts). WS ?token= is required — anonymous connects get handshake-rejected (HTTP 403 surfaced by websockets lib as InvalidStatus; close code 4401 in the ASGI message). Frontend: in-modal clicks need JS scrollIntoView+click; each browser_automation call is a fresh profile; wait for 'Uploading photo' to clear before confirm-sos-button. responder-map only renders when incident has GPS coordinates (headless browser has no geolocation → placeholder shown, expected).",
+  "rca_of_issue": "No app bugs found this iteration. Test-side migrations only: (1) conftest CREDENTIALS updated to env-sourced Cs!* passwords, reset_demo fixture now logs in as admin first (SEC-002 broke the old public-reset fixture); (2) test_realtime_ai WS connections updated to ws_url(token) after SEC-003 made auth mandatory; (3) test_media_alerts TestFileDownload rewritten from raw ?token= flow to signed-URL flow after SEC-004."
+}
